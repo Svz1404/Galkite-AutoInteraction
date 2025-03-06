@@ -3,6 +3,7 @@ import fs from 'fs';
 import ora from 'ora';
 import readline from 'readline';
 import cfonts from "cfonts";
+import chalk from "chalk";
 
 const AGENT_IDS = [
     "deployment_fseGykIvCLs3m9Nrpe9Zguy9",

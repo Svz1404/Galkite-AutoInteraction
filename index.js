@@ -1,11 +1,110 @@
 import fetch from 'node-fetch';
-import cfonts from "cfonts";
-import chalk from 'chalk';
-import ora from 'ora';
 import fs from 'fs';
+import ora from 'ora';
+import readline from 'readline';
+import cfonts from "cfonts";
 
-async function main(numberOfInteractions) {
-  cfonts.say('NT Exhaust', {
+const AGENT_IDS = [
+    "deployment_fseGykIvCLs3m9Nrpe9Zguy9",
+    "deployment_R89FtdnXa7jWWHyr97WQ9LKG"
+];
+
+const messages = fs.readFileSync("NTE-Pesan.txt", "utf-8").split("\n").map(m => m.trim()).filter(Boolean);
+const walletAddresses = fs.readFileSync("NTE-Wallet.txt", "utf-8").split("\n").map(addr => addr.trim()).filter(Boolean);
+const proxies = fs.existsSync("proxy.txt") ? fs.readFileSync("proxy.txt", "utf-8").split("\n").map(p => p.trim()).filter(Boolean) : [];
+const proxy = proxies.length > 0 ? proxies[Math.floor(Math.random() * proxies.length)] : null;
+
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function fetchResponse(message) {
+    const spinner = ora("Fetching AI response...").start();
+    try {
+        const requestBody = { message, stream: true };
+        const fetchOptions = {
+            method: "POST",
+            headers: {
+                "accept": "text/event-stream",
+                "content-type": "application/json",
+                "origin": "https://agents.testnet.gokite.ai",
+                "referer": "https://agents.testnet.gokite.ai/",
+            },
+            body: JSON.stringify(requestBody)
+        };
+        
+        if (proxy) {
+            fetchOptions.agent = new (require('https-proxy-agent'))(proxy);
+        }
+
+        const response = await fetch("https://deployment-r89ftdnxa7jwwhyr97wq9lkg.stag-vxzy.zettablock.com/main", fetchOptions);
+        const text = await response.text();
+        const result = text.match(/"content":\s*"(.*?)"/g)?.map(m => m.replace(/"content":\s*"|"/g, ''))?.join(' ') || "";
+        spinner.succeed("AI response received.");
+        return result;
+    } catch (error) {
+        spinner.fail("Failed to fetch AI response.");
+        throw error;
+    }
+}
+
+async function reportUsage(message, responseText, agentId, walletAddress) {
+    const spinner = ora("Reporting usage...").start();
+    try {
+        const reportBody = {
+            agent_id: agentId,
+            request_metadata: {},
+            request_text: message,
+            response_text: responseText,
+            total_time: 3538.2,
+            ttft: 1219.5,
+            wallet_address: walletAddress
+        };
+        
+        const response = await fetch("https://quests-usage-dev.prod.zettablock.com/api/report_usage", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(reportBody)
+        });
+        const data = await response.json();
+        spinner.succeed("Usage report successfully recorded.");
+        return data;
+    } catch (error) {
+        spinner.fail("Failed to report usage.");
+        throw error;
+    }
+}
+
+async function fetchInference(id, attempt) {
+    const spinner = ora(`Fetching inference (attempt ${attempt})...`).start();
+    await delay(5000);
+    try {
+        const response = await fetch(`https://neo.prod.zettablock.com/v1/inference?id=${id}`);
+        const data = await response.json();
+        spinner.succeed(`Inference ${attempt} received.`);
+        return data;
+    } catch (error) {
+        spinner.fail(`Inference ${attempt} failed.`);
+        throw error;
+    }
+}
+
+async function fetchStats(walletAddress) {
+    const spinner = ora("Fetching user stats...").start();
+    try {
+        const response = await fetch(`https://quests-usage-dev.prod.zettablock.com/api/user/${walletAddress}/stats`);
+        const data = await response.json();
+        spinner.succeed("User stats fetched successfully.");
+        return data;
+    } catch (error) {
+        spinner.fail("Failed to fetch user stats.");
+        throw error;
+    }
+}
+
+const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+});
+cfonts.say('NT Exhaust', {
     font: 'block',
     align: 'center',
     colors: ['cyan', 'magenta'],
@@ -17,144 +116,37 @@ async function main(numberOfInteractions) {
   });
 
   console.log(chalk.green("=== Telegram Channel : NT Exhaust ( @NTExhaust ) ===\n"));
-
-  const interactions = loadInteractionsFromFile('interactions.txt');
-
-  for (let i = 0; i < parseInt(numberOfInteractions); i++) {
-    console.log(chalk.blue(`\nProcessing interaction ${i + 1} of ${numberOfInteractions}`));
-    const { agent_id, request_text, response_text } = interactions[i % interactions.length];
-    await retryOperation(() => reportUsage(agent_id, request_text, response_text));
-  }
-
-  console.log(chalk.magenta("\u23F3 All interactions completed. Waiting 24 hours before restarting..."));
-  await new Promise(resolve => setTimeout(resolve, 24 * 60 * 60 * 1000)); // 24 hours delay
-  await main(numberOfInteractions); // Restart the process after 24 hours
-}
-
-const walletAddress = "ADDRESSWALLET";
-const postUrl = 'https://quests-usage-dev.prod.zettablock.com/api/report_usage';
-
-function loadInteractionsFromFile(filePath) {
-  const data = fs.readFileSync(filePath, 'utf-8');
-  return data.split('\n').filter(line => line).map(line => {
-    const [agent_id, request_text, response_text] = line.split('|');
-    return { agent_id, request_text, response_text };
-  });
-}
-
-async function retryOperation(operation, delay = 5000) {
-  const spinner = ora('Processing...').start();
-  let firstAttempt = true;
-  while (true) {
-    try {
-      if (firstAttempt) {
-        console.log(chalk.cyan(`\uD83D\uDD04 Trying interaction with wallet: ${walletAddress}`));
-        firstAttempt = false;
-      }
-      await operation();
-      spinner.succeed('Operation successful!');
-      return;
-    } catch {
-      spinner.text = 'Retrying...';
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
-  }
-}
-
-async function reportUsage(agent_id, request_text, response_text) {
-  const postPayload = {
-    wallet_address: walletAddress,
-    agent_id,
-    request_text,
-    response_text,
-    request_metadata: null
-  };
-
-  const headers = {
-    'Accept': '*/*',
-    'Content-Type': 'application/json'
-  };
-
-  const response = await fetch(postUrl, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(postPayload)
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`POST request failed: ${response.status}\nServer Response: ${errorText}`);
-  }
-
-  const data = await response.json();
-  const interactionId = data.interaction_id;
-
-  if (!interactionId) throw new Error('interaction_id not found in the POST response!');
-
-  console.log(chalk.green(`\u2705 Success! Got interaction ID: ${interactionId}`));
-
-  await retryOperation(() => submitInteraction(interactionId));
-}
-
-async function submitInteraction(interactionId) {
-  const getUrl = `https://neo-dev.prod.zettablock.com/v1/inference?id=${interactionId}`;
-
-  const headers = {
-    'Accept': '*/*',
-    'Content-Type': 'application/json'
-  };
-
-  console.log(chalk.cyan(`\uD83D\uDD04 Trying to submit interaction (${interactionId})...`));
-
-  const response = await fetch(getUrl, { method: 'GET', headers });
-  if (!response.ok) throw new Error(`GET request failed: ${response.status}`);
-
-  await new Promise(resolve => setTimeout(resolve, 2000));
-  const response2 = await fetch(getUrl, { method: 'GET', headers });
-  if (!response2.ok) throw new Error(`Second request failed: ${response2.status}`);
-
-  const data = await response2.json();
-  const txHash = data.tx_hash || chalk.gray("No transaction hash available");
-
-  console.log(chalk.green(`\u2705 Successfully submitted!`));
-  console.log(chalk.magenta(`______________________________________________________________________________`));
-
-  await fetchUserStats();
-}
-
-async function fetchUserStats() {
-  const statsUrl = `https://quests-usage-dev.prod.zettablock.com/api/user/${walletAddress}/stats`;
-
-  const statsHeaders = {
-    'accept': '*/*',
-    'accept-encoding': 'gzip, deflate, br, zstd',
-    'accept-language': 'en-US,en;q=0.8',
-    'origin': 'https://agents.testnet.gokite.ai',
-    'referer': 'https://agents.testnet.gokite.ai/',
-    'user-agent': 'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Mobile Safari/537.36'
-  };
-
-  const response = await fetch(statsUrl, { method: 'GET', headers: statsHeaders });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch user stats: ${response.status}`);
-  }
-
-  const stats = await response.json();
-  const totalInteractions = stats.total_interactions || chalk.gray('N/A');
-  const lastActive = stats.last_active || chalk.gray('N/A');
-
-  console.log(chalk.yellow('\ud83d\udcca User Interaction Stats:'));
-  console.log(chalk.blue(`Total Interactions: ${totalInteractions}`));
-  console.log(chalk.blue(`Last Active: ${lastActive}`));
-}
-
-process.on('SIGINT', () => {
-  console.log(chalk.red('\nProcess terminated by user.'));
-  process.exit(0);
+rl.question("Enter the number of loops: ", async (loopsInput) => {
+    const TOTAL_LOOPS = parseInt(loopsInput, 10) || 1;
+    rl.close();
+    
+    (async () => {
+        try {
+            let interactionCounter = 1;
+            for (const walletAddress of walletAddresses) {
+                for (let i = 0; i < TOTAL_LOOPS; i++) {
+                    console.log(`Processing interaction ${interactionCounter} of ${TOTAL_LOOPS * walletAddresses.length}`);
+                    const agentId = AGENT_IDS[Math.floor(Math.random() * AGENT_IDS.length)];
+                    const message = messages[Math.floor(Math.random() * messages.length)];
+                    
+                    const responseText = await fetchResponse(message);
+                    const report = await reportUsage(message, responseText, agentId, walletAddress);
+                    const inferenceId = report.interaction_id;
+                    
+                    await fetchInference(inferenceId, 1);
+                    await fetchInference(inferenceId, 2);
+                    console.log("=== Telegram Channel : NT Exhaust ( @NTExhaust ) ===\n")
+                    const stats = await fetchStats(walletAddress);
+                    console.log("📊 User Interaction Stats:", stats);
+                    
+                    console.log("✔ Operation successful!");
+                    console.log("=== Telegram Channel : NT Exhaust ( @NTExhaust ) ===\n")
+                    interactionCounter++;
+                    await delay(10000);
+                }
+            }
+        } catch (error) {
+            console.error("Error:", error);
+        }
+    })();
 });
-
-(async () => {
-  const numberOfInteractions = process.argv[2] || 1;
-  await main(numberOfInteractions);
-})();

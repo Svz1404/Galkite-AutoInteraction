@@ -4,7 +4,6 @@ import ora from 'ora';
 import readline from 'readline';
 import cfonts from "cfonts";
 import chalk from "chalk";
-
 const AGENT_IDS = [
     "deployment_fseGykIvCLs3m9Nrpe9Zguy9",
     "deployment_R89FtdnXa7jWWHyr97WQ9LKG"
@@ -121,7 +120,7 @@ rl.question("Enter the number of loops: ", async (loopsInput) => {
     const TOTAL_LOOPS = parseInt(loopsInput, 10) || 1;
     rl.close();
     
-    (async () => {
+    do {
         try {
             let interactionCounter = 1;
             for (const walletAddress of walletAddresses) {
@@ -149,5 +148,7 @@ rl.question("Enter the number of loops: ", async (loopsInput) => {
         } catch (error) {
             console.error("Error:", error);
         }
-    })();
+        console.log("Waiting 24 hours before the next run...");
+        await delay(24 * 60 * 60 * 1000);
+    } while (true);
 });

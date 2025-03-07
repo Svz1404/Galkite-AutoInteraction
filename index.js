@@ -31,9 +31,10 @@ async function fetchResponse(message) {
             body: JSON.stringify(requestBody)
         };
         
-        if (proxy) {
-            fetchOptions.agent = new (require('https-proxy-agent'))(proxy);
-        }
+       if (proxy) {
+    const { HttpsProxyAgent } = await import('https-proxy-agent');
+    fetchOptions.agent = new HttpsProxyAgent(proxy);
+}
 
         const response = await fetch("https://deployment-r89ftdnxa7jwwhyr97wq9lkg.stag-vxzy.zettablock.com/main", fetchOptions);
         const text = await response.text();

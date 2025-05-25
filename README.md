@@ -28,4 +28,8 @@
    ```bash
    nano accounts.txt
    ```
+6. run it
+   ```bash
+   npm start
+   ```
 

@@ -472,14 +472,14 @@ async function getWalletInfo(access_token, proxy = null, retryCount = 0) {
       config.httpAgent = new HttpsProxyAgent(proxy);
       config.httpsAgent = new HttpsProxyAgent(proxy);
     }
-    const response = await axios.get('https://ozone-point-system.prod.gokite.ai/leaderboard/me', config);
-    const { username, rank, totalXpPoints } = response.data.data;
-    if (!username || rank === undefined || totalXpPoints === undefined) {
+    const response = await axios.get('https://ozone-point-system.prod.gokite.ai/me', config);
+    const { username, rank, total_xp_points } = response.data.data.profile;
+    if (!username || rank === undefined || total_xp_points === undefined) {
       throw new Error('Invalid response: username, rank, or totalXpPoints missing');
     }
     spinner.succeed(chalk.green(` ┊ ✓ Info wallet diterima: ${username.slice(0, 8)}...`));
     await sleep(500);
-    return { username, rank, totalXpPoints };
+    return { username, rank, total_xp_points };
   } catch (err) {
     if (retryCount < maxRetries - 1) {
       spinner.text = chalk.cyan(` ┊ → Mengambil info wallet [Retry ke-${retryCount + 1}/${maxRetries}]`);
@@ -727,8 +727,8 @@ async function processAccounts(accounts, professorMessages, cryptoBuddyMessages,
   let failedChats = 0;
 
   const aiAgents = {
-    "Professor": "deployment_KiMLvUiTydioiHm7PWZ12zJU",
-    "Crypto Buddy": "deployment_ByVHjMD6eDb9AdekRIbyuz14",
+    "Professor": "deployment_BSfolnHm0er7rNprjQWYgNhQ",
+    "Crypto Buddy": "deployment_l3QYj1avTiZz2vH2daFJBGu1",
     "Sherlock": "deployment_OX7sn2D0WvxGUGK8CTqsU5VJ"
   };
   const agentNames = ["Professor", "Crypto Buddy", "Sherlock"];
@@ -797,9 +797,9 @@ async function processAccounts(accounts, professorMessages, cryptoBuddyMessages,
           return counts;
         }, {});
         console.log(chalk.yellow(' ┊ ┌── User Information ──'));
-        console.log(chalk.white(` ┊ │ Username: ${walletInfo.username.slice(0, 8)}...`));
+        console.log(chalk.white(` ┊ │ Username: ${walletInfo.username.slice(0, 9)}...`));
         console.log(chalk.white(` ┊ │ Rank: ${walletInfo.rank}`));
-        console.log(chalk.white(` ┊ │ Total XP Points: ${walletInfo.totalXpPoints}`));
+        console.log(chalk.white(` ┊ │ Total XP Points: ${walletInfo.total_xp_points}`));
         agentNames.forEach(agent => {
           console.log(chalk.white(` ┊ │ Agent ${agent}: ${agentCounts[agent] || 0}`));
         });
